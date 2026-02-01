@@ -1,0 +1,15 @@
+[package]
+name = "auto-tower"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rust-droid = "0.1.1"
+anyhow = "1.0"
+env_logger = "0.11"
+image = "0.25.9"
+chrono = "0.4.43"
+log = "0.4.29"
+find-subimage = { version = "0.1.12", default-features = false }
+rand = "0.9"
+
