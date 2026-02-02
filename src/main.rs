@@ -1,6 +1,7 @@
 use anyhow::{self, Context};
 use env_logger;
 use find_subimage::SubImageFinderState;
+use image::{ImageBuffer, Luma};
 use log::{debug, info, warn};
 use rust_droid::{Droid, DroidConfig};
 mod ui;
@@ -52,7 +53,7 @@ fn prune_snapshots(limit: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn prepare_screen(droid: &mut Droid) -> anyhow::Result<(UIMask, PathBuf)> {
+fn prepare_screen(droid: &mut Droid) -> anyhow::Result<(UIMask, ImageBuffer<Luma<u8>, Vec<u8>>)> {
     let now = chrono::Local::now();
     let filename = format!("screen_{}.png", now.format("%Y-%m-%dT%H-%M-%S"));
     let snapshot_path = get_snapshots_dir()?.join(Path::new(&filename));
@@ -62,10 +63,9 @@ fn prepare_screen(droid: &mut Droid) -> anyhow::Result<(UIMask, PathBuf)> {
     );
     droid.snapshot(&snapshot_path)?;
     let mask = UIMask::gem_column();
-    let img = mask.crop(image::open(&snapshot_path)?);
-    img.save(&snapshot_path)?;
+    let img = mask.crop(image::open(&snapshot_path)?).to_luma8();
     prune_snapshots(20)?;
-    Ok((mask, snapshot_path))
+    Ok((mask, img))
 }
 
 fn connect_waydroid() -> anyhow::Result<()> {
@@ -106,8 +106,7 @@ fn main() -> anyhow::Result<()> {
     let mut finder = SubImageFinderState::new();
 
     loop {
-        let (window_mask, input_path) = prepare_screen(&mut droid)?;
-        let input = image::open(input_path)?.to_luma8();
+        let (window_mask, input) = prepare_screen(&mut droid)?;
         let (input_w, input_h) = input.dimensions();
         let input_buf = input.into_raw();
 
