@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
             droid.touch(surface.random_point().into()).execute()?;
 
             info!("Gems claimed");
-            droid.sleep(Duration::from_mins(10));
+            droid.sleep(Duration::from_secs(630));
         } else {
             warn!("Template not found, trying again in 1 minute");
             droid.sleep(Duration::from_mins(1));
