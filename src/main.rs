@@ -61,7 +61,7 @@ fn prepare_screen(droid: &mut Droid) -> anyhow::Result<(UIMask, PathBuf)> {
         snapshot_path.display()
     );
     droid.snapshot(&snapshot_path)?;
-    let mask = UIMask::window();
+    let mask = UIMask::gem_column();
     let img = mask.crop(image::open(&snapshot_path)?);
     img.save(&snapshot_path)?;
     prune_snapshots(20)?;
@@ -78,6 +78,11 @@ fn connect_waydroid() -> anyhow::Result<()> {
         "waydroid adb connect output: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+
+    Command::new("adb")
+        .args(["shell", "wm", "size", "319x695"])
+        .output()
+        .context("failed to set size via adb")?;
     Ok(())
 }
 

@@ -65,10 +65,10 @@ impl UIMask {
         self.height
     }
 
-    pub const DEFAULT_WINDOW: UIMask = UIMask {
-        x: 609,
+    pub const GEM_COLUMN: UIMask = UIMask {
+        x: 0,
         y: 0,
-        width: 295,
+        width: 100,
         height: 695,
     };
 
@@ -80,8 +80,8 @@ impl UIMask {
         height: 695,
     };
 
-    pub fn window() -> Self {
-        UIMask::DEFAULT_WINDOW
+    pub fn gem_column() -> Self {
+        UIMask::GEM_COLUMN
     }
 
     pub fn battle_end_screen() -> Self {
