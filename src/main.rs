@@ -1,9 +1,10 @@
 use anyhow::{self, Context};
 use env_logger;
 use find_subimage::SubImageFinderState;
-use image::{ImageBuffer, Luma};
-use log::{debug, info, warn};
+use image::DynamicImage;
+use log::{debug, info};
 use rust_droid::{Droid, DroidConfig};
+mod assets;
 mod ui;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use std::process::Command;
 use std::time::Duration;
 use ui::UISurface;
 
+use crate::assets::AssetTemplate;
 use crate::ui::UIMask;
 
 fn get_snapshots_dir() -> anyhow::Result<PathBuf> {
@@ -53,19 +55,20 @@ fn prune_snapshots(limit: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn prepare_screen(droid: &mut Droid) -> anyhow::Result<(UIMask, ImageBuffer<Luma<u8>, Vec<u8>>)> {
+fn prepare_screen(droid: &mut Droid) -> anyhow::Result<DynamicImage> {
     let now = chrono::Local::now();
     let filename = format!("screen_{}.png", now.format("%Y-%m-%dT%H-%M-%S"));
     let snapshot_path = get_snapshots_dir()?.join(Path::new(&filename));
-    debug!(
-        "Taking a snapshot and saving to '{}'...",
-        snapshot_path.display()
-    );
     droid.snapshot(&snapshot_path)?;
-    let mask = UIMask::gem_column();
-    let img = mask.crop(image::open(&snapshot_path)?).to_luma8();
     prune_snapshots(20)?;
-    Ok((mask, img))
+    Ok(image::open(&snapshot_path)?)
+}
+
+fn apply_mask(img: &DynamicImage, mask: UIMask) -> anyhow::Result<(Vec<u8>, usize, usize)> {
+    let cropped = mask.crop(img).to_luma8();
+    let (width, height) = cropped.dimensions();
+    let bytes = cropped.into_raw();
+    Ok((bytes, width as usize, height as usize))
 }
 
 fn connect_waydroid() -> anyhow::Result<()> {
@@ -86,16 +89,16 @@ fn connect_waydroid() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-
-    connect_waydroid()?;
-    let mut droid = Droid::new(DroidConfig::default())?;
-
-    let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/assets/claim_gems.png");
-    let template = image::open(template_path)?.to_luma8();
-    let (tpl_w, tpl_h) = template.dimensions();
-    let template_buf = template.into_raw();
+fn with_surface<F>(
+    screen: &DynamicImage,
+    template: &AssetTemplate,
+    mask: UIMask,
+    callback: F,
+) -> anyhow::Result<bool>
+where
+    F: FnOnce(UISurface) -> anyhow::Result<()>,
+{
+    let (input_buf, input_w, input_h) = apply_mask(&screen, mask)?;
 
     // let backend = Backend::Scalar {
     //     threshold: 0.0,
@@ -105,40 +108,62 @@ fn main() -> anyhow::Result<()> {
     // let mut finder = SubImageFinderState::new().with_backend(backend);
     let mut finder = SubImageFinderState::new();
 
-    loop {
-        let (window_mask, input) = prepare_screen(&mut droid)?;
-        let (input_w, input_h) = input.dimensions();
-        let input_buf = input.into_raw();
+    let matches = finder.find_subimage_positions(
+        (&input_buf, input_w as usize, input_h as usize),
+        (
+            &template.buf,
+            template.width as usize,
+            template.height as usize,
+        ),
+        1,
+    );
 
-        let matches = finder.find_subimage_positions(
-            (&input_buf, input_w as usize, input_h as usize),
-            (&template_buf, tpl_w as usize, tpl_h as usize),
-            1,
+    if let Some((x, y, _distance)) = matches.first() {
+        let x = *x as u32;
+        let y = *y as u32;
+        let surface = UISurface::new(
+            mask.to_point(x, y),
+            mask.to_point(x + template.width, y + template.height),
         );
+        debug!(
+            "Surface matched: ({}, {}) to ({}, {})",
+            surface.top_left.x, surface.top_left.y, surface.bottom_right.x, surface.bottom_right.y,
+        );
+        callback(surface)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
 
-        if let Some((x, y, _distance)) = matches.first() {
-            let x = *x;
-            let y = *y;
-            let surface = UISurface::new(
-                window_mask.to_point(x as u32, y as u32),
-                window_mask.to_point(x as u32 + tpl_w, y as u32 + tpl_h),
-            );
-            debug!(
-                "Claim gems bounding box: ({},{}) to ({},{})",
-                surface.top_left.x,
-                surface.top_left.y,
-                surface.bottom_right.x,
-                surface.bottom_right.y,
-            );
+fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
+    connect_waydroid()?;
+    let mut droid = Droid::new(DroidConfig::default())?;
+    let gems_template = assets::AssetTemplate::from_file("claim_gems.png")?;
+    let retry_run_template = assets::AssetTemplate::from_file("retry_run.png")?;
+
+    loop {
+        let mut sleep_duration_secs = 60;
+        let screen = prepare_screen(&mut droid)?;
+        with_surface(&screen, &gems_template, UIMask::gem_column(), |surface| {
             droid.touch(surface.random_point().into()).execute()?;
             droid.sleep(Duration::from_millis(500));
             droid.touch(surface.random_point().into()).execute()?;
-
             info!("Gems claimed");
-            droid.sleep(Duration::from_secs(630));
-        } else {
-            warn!("Template not found, trying again in 1 minute");
-            droid.sleep(Duration::from_mins(1));
-        }
+            sleep_duration_secs = 630;
+            Ok(())
+        })?;
+        with_surface(
+            &screen,
+            &retry_run_template,
+            UIMask::battle_end_screen(),
+            |_| {
+                info!("Game end screen found. what to do?");
+                Ok(())
+            },
+        )?;
+        droid.sleep(Duration::from_secs(sleep_duration_secs));
     }
 }

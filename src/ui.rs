@@ -72,12 +72,11 @@ impl UIMask {
         height: 695,
     };
 
-    // TODO: Update with real coordinates when available.
     pub const BATTLE_END_SCREEN: UIMask = UIMask {
-        x: 609,
-        y: 0,
-        width: 295,
-        height: 695,
+        x: 16,
+        y: 190,
+        width: 287,
+        height: 316,
     };
 
     pub fn gem_column() -> Self {
@@ -88,7 +87,7 @@ impl UIMask {
         UIMask::BATTLE_END_SCREEN
     }
 
-    pub fn crop(&self, img: DynamicImage) -> DynamicImage {
+    pub fn crop(&self, img: &DynamicImage) -> DynamicImage {
         img.crop_imm(self.x, self.y, self.width, self.height)
     }
 

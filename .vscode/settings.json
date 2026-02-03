@@ -7,6 +7,10 @@
     "/^cargo build$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^cargo build --release$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }
