@@ -89,15 +89,11 @@ fn connect_waydroid() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn with_surface<F>(
+fn with_surface(
     screen: &DynamicImage,
     template: &AssetTemplate,
     mask: UIMask,
-    callback: F,
-) -> anyhow::Result<bool>
-where
-    F: FnOnce(UISurface) -> anyhow::Result<()>,
-{
+) -> anyhow::Result<Option<UISurface>> {
     let (input_buf, input_w, input_h) = apply_mask(&screen, mask)?;
 
     // let backend = Backend::Scalar {
@@ -129,10 +125,9 @@ where
             "Surface matched: ({}, {}) to ({}, {})",
             surface.top_left.x, surface.top_left.y, surface.bottom_right.x, surface.bottom_right.y,
         );
-        callback(surface)?;
-        Ok(true)
+        Ok(Some(surface))
     } else {
-        Ok(false)
+        Ok(None)
     }
 }
 
@@ -147,23 +142,20 @@ fn main() -> anyhow::Result<()> {
     loop {
         let mut sleep_duration_secs = 60;
         let screen = prepare_screen(&mut droid)?;
-        with_surface(&screen, &gems_template, UIMask::gem_column(), |surface| {
+        if let Some(surface) = with_surface(&screen, &gems_template, UIMask::gem_column())? {
             droid.touch(surface.random_point().into()).execute()?;
             droid.sleep(Duration::from_millis(500));
             droid.touch(surface.random_point().into()).execute()?;
             info!("Gems claimed");
             sleep_duration_secs = 630;
-            Ok(())
-        })?;
-        with_surface(
-            &screen,
-            &retry_run_template,
-            UIMask::battle_end_screen(),
-            |_| {
-                info!("Game end screen found. what to do?");
-                Ok(())
-            },
-        )?;
+        } else if let Some(surface) =
+            with_surface(&screen, &retry_run_template, UIMask::battle_end_screen())?
+        {
+            info!("Game end screen found. restarting run");
+            droid.touch(surface.random_point().into()).execute()?;
+            sleep_duration_secs = 30;
+        }
+
         droid.sleep(Duration::from_secs(sleep_duration_secs));
     }
 }
