@@ -12,4 +12,5 @@ chrono = "0.4.43"
 log = "0.4.29"
 find-subimage = { version = "0.1.12", default-features = false }
 rand = "0.9"
+imageproc = "0.26.0"
 

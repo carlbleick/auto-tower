@@ -1,7 +1,7 @@
 use anyhow::{self, Context};
 use env_logger;
-use find_subimage::SubImageFinderState;
 use image::DynamicImage;
+use imageproc::template_matching::{MatchTemplateMethod, find_extremes, match_template};
 use log::{debug, info};
 use rust_droid::{Droid, DroidConfig};
 mod assets;
@@ -14,6 +14,8 @@ use ui::UISurface;
 
 use crate::assets::AssetTemplate;
 use crate::ui::UIMask;
+
+const MIN_SCORE: f32 = 0.8;
 
 fn get_snapshots_dir() -> anyhow::Result<PathBuf> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("snapshots");
@@ -64,13 +66,6 @@ fn prepare_screen(droid: &mut Droid) -> anyhow::Result<DynamicImage> {
     Ok(image::open(&snapshot_path)?)
 }
 
-fn apply_mask(img: &DynamicImage, mask: UIMask) -> anyhow::Result<(Vec<u8>, usize, usize)> {
-    let cropped = mask.crop(img).to_luma8();
-    let (width, height) = cropped.dimensions();
-    let bytes = cropped.into_raw();
-    Ok((bytes, width as usize, height as usize))
-}
-
 fn connect_waydroid() -> anyhow::Result<()> {
     let output = Command::new("waydroid")
         .args(["adb", "connect"])
@@ -94,29 +89,20 @@ fn with_surface(
     template: &AssetTemplate,
     mask: UIMask,
 ) -> anyhow::Result<Option<UISurface>> {
-    let (input_buf, input_w, input_h) = apply_mask(&screen, mask)?;
+    let input = mask.apply(&screen)?;
+    input.save(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("after-threshold/screen.png"))?;
 
-    // let backend = Backend::Scalar {
-    //     threshold: 0.0,
-    //     step_x: 1,
-    //     step_y: 1,
-    // };
-    // let mut finder = SubImageFinderState::new().with_backend(backend);
-    let mut finder = SubImageFinderState::new();
-
-    let matches = finder.find_subimage_positions(
-        (&input_buf, input_w as usize, input_h as usize),
-        (
-            &template.buf,
-            template.width as usize,
-            template.height as usize,
-        ),
-        1,
+    let scores = match_template(
+        &input,
+        &template.image,
+        MatchTemplateMethod::CrossCorrelationNormalized,
     );
+    let extremes = find_extremes(&scores);
+    let best_score = extremes.max_value;
+    let best_location = extremes.max_value_location;
 
-    if let Some((x, y, _distance)) = matches.first() {
-        let x = *x as u32;
-        let y = *y as u32;
+    if best_score >= MIN_SCORE {
+        let (x, y) = best_location;
         let surface = UISurface::new(
             mask.to_point(x, y),
             mask.to_point(x + template.width, y + template.height),
@@ -125,8 +111,16 @@ fn with_surface(
             "Surface matched: ({}, {}) to ({}, {})",
             surface.top_left.x, surface.top_left.y, surface.bottom_right.x, surface.bottom_right.y,
         );
+        debug!(
+            "MATCH -> x={}, y={}, score={:.4}",
+            best_location.0, best_location.1, best_score
+        );
         Ok(Some(surface))
     } else {
+        debug!(
+            "NO MATCH -> best x={}, y={}, score={:.4}",
+            best_location.0, best_location.1, best_score
+        );
         Ok(None)
     }
 }

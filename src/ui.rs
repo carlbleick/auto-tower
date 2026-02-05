@@ -1,5 +1,8 @@
-use image::DynamicImage;
+use anyhow::Ok;
+use image::{DynamicImage, GrayImage};
 use rust_droid::common::point::Point;
+
+use crate::assets::apply_threshold;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UIPoint {
@@ -74,9 +77,9 @@ impl UIMask {
 
     pub const BATTLE_END_SCREEN: UIMask = UIMask {
         x: 16,
-        y: 190,
+        y: 150,
         width: 287,
-        height: 316,
+        height: 400,
     };
 
     pub fn gem_column() -> Self {
@@ -87,8 +90,13 @@ impl UIMask {
         UIMask::BATTLE_END_SCREEN
     }
 
-    pub fn crop(&self, img: &DynamicImage) -> DynamicImage {
+    fn crop(&self, img: &DynamicImage) -> DynamicImage {
         img.crop_imm(self.x, self.y, self.width, self.height)
+    }
+
+    pub fn apply(&self, img: &DynamicImage) -> anyhow::Result<GrayImage> {
+        let cropped = self.crop(img);
+        Ok(apply_threshold(&cropped)?)
     }
 
     pub fn to_point(&self, x: u32, y: u32) -> UIPoint {
