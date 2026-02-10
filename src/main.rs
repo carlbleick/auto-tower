@@ -3,6 +3,8 @@ use env_logger;
 use image::DynamicImage;
 use imageproc::template_matching::{MatchTemplateMethod, find_extremes, match_template};
 use log::{debug, info};
+use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
+use rten::Model;
 use rust_droid::{Droid, DroidConfig};
 mod assets;
 mod ui;
@@ -15,10 +17,16 @@ use ui::UISurface;
 use crate::assets::AssetTemplate;
 use crate::ui::UIMask;
 
-const MIN_SCORE: f32 = 0.8;
+const MIN_SCORE: f32 = 0.75;
+
+fn file_path(path: &str) -> PathBuf {
+    let mut abs_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    abs_path.push(path);
+    abs_path
+}
 
 fn get_snapshots_dir() -> anyhow::Result<PathBuf> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("snapshots");
+    let dir = file_path("snapshots");
     fs::create_dir_all(&dir).context("failed to create snapshots directory")?;
     Ok(dir)
 }
@@ -90,7 +98,7 @@ fn with_surface(
     mask: UIMask,
 ) -> anyhow::Result<Option<UISurface>> {
     let input = mask.apply(&screen)?;
-    input.save(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("after-threshold/screen.png"))?;
+    input.save(file_path("debugging-imgs/screen.png"))?;
 
     let scores = match_template(
         &input,
@@ -125,25 +133,55 @@ fn with_surface(
     }
 }
 
+fn get_ocr_text(engine: &OcrEngine, mask: UIMask, img: &DynamicImage) -> anyhow::Result<String> {
+    let masked = mask.crop(&img);
+    masked.save(file_path(&format!("debugging-imgs/ocr-{}.png", mask)))?;
+    let img_rgb8 = masked.into_rgb8();
+    let img_source = ImageSource::from_bytes(img_rgb8.as_raw(), img_rgb8.dimensions())?;
+    let ocr_input = engine.prepare_input(img_source)?;
+    engine.get_text(&ocr_input)
+}
+
+fn print_stats(engine: &OcrEngine, img: &DynamicImage) -> anyhow::Result<()> {
+    let gem_currency = get_ocr_text(engine, UIMask::GEM_CURRENCY, img)?;
+    let wave_count = get_ocr_text(engine, UIMask::WAVE_COUNT, img)?;
+    info!("GEMS: {}", gem_currency);
+    info!("WAVE: {}", wave_count);
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     connect_waydroid()?;
     let mut droid = Droid::new(DroidConfig::default())?;
     let gems_template = assets::AssetTemplate::from_file("claim_gems.png")?;
     let retry_run_template = assets::AssetTemplate::from_file("retry_run.png")?;
 
+    let detection_model_path = file_path("ocr-models/text-detection.rten");
+    let rec_model_path = file_path("ocr-models/text-recognition.rten");
+
+    let detection_model = Model::load_file(detection_model_path)?;
+    let recognition_model = Model::load_file(rec_model_path)?;
+
+    let engine = OcrEngine::new(OcrEngineParams {
+        detection_model: Some(detection_model),
+        recognition_model: Some(recognition_model),
+        ..Default::default()
+    })?;
+
     loop {
         let mut sleep_duration_secs = 60;
         let screen = prepare_screen(&mut droid)?;
-        if let Some(surface) = with_surface(&screen, &gems_template, UIMask::gem_column())? {
+        print_stats(&engine, &screen)?;
+        if let Some(surface) = with_surface(&screen, &gems_template, UIMask::GEM_COLUMN)? {
             droid.touch(surface.random_point().into()).execute()?;
             droid.sleep(Duration::from_millis(500));
             droid.touch(surface.random_point().into()).execute()?;
             info!("Gems claimed");
             sleep_duration_secs = 630;
         } else if let Some(surface) =
-            with_surface(&screen, &retry_run_template, UIMask::battle_end_screen())?
+            with_surface(&screen, &retry_run_template, UIMask::BATTLE_END_SCREEN)?
         {
             info!("Game end screen found. restarting run");
             droid.touch(surface.random_point().into()).execute()?;

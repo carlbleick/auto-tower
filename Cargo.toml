@@ -13,4 +13,7 @@ log = "0.4.29"
 find-subimage = { version = "0.1.12", default-features = false }
 rand = "0.9"
 imageproc = "0.26.0"
+ocrs = "0.12.0"
+rten = "0.24.0"
+rten-tensor = "0.24.0"
 

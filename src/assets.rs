@@ -24,7 +24,7 @@ impl AssetTemplate {
         let image = apply_threshold(&image::open(path)?)?;
         image.save(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join(format!("after-threshold/{}", file_name)),
+                .join(format!("debugging-imgs/{}", file_name)),
         )?;
         let (width, height) = image.dimensions();
         Ok(Self {

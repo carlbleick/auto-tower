@@ -39,58 +39,54 @@ impl UISurface {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UIMask {
+    name: &'static str,
     x: u32,
     y: u32,
     width: u32,
     height: u32,
 }
 
-impl UIMask {
-    pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
+impl std::fmt::Display for UIMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
     }
+}
 
-    pub fn x(&self) -> u32 {
-        self.x
-    }
-    pub fn y(&self) -> u32 {
-        self.y
-    }
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-    pub fn height(&self) -> u32 {
-        self.height
-    }
+impl UIMask {
 
     pub const GEM_COLUMN: UIMask = UIMask {
+        name: "GEM_COLUMN",
         x: 0,
         y: 0,
-        width: 100,
+        width: 90,
         height: 695,
     };
 
+    pub const GEM_CURRENCY: UIMask = UIMask {
+        name: "GEM_CURRENCY",
+        x: 25,
+        y: 52,
+        width: 50,
+        height: 25,
+    };
+
+    pub const WAVE_COUNT: UIMask = UIMask {
+        name: "WAVE_COUNT",
+        x: 205,
+        y: 433,
+        width: 50,
+        height: 17,
+    };
+
     pub const BATTLE_END_SCREEN: UIMask = UIMask {
+        name: "BATTLE_END_SCREEN",
         x: 16,
         y: 150,
         width: 287,
         height: 400,
     };
 
-    pub fn gem_column() -> Self {
-        UIMask::GEM_COLUMN
-    }
-
-    pub fn battle_end_screen() -> Self {
-        UIMask::BATTLE_END_SCREEN
-    }
-
-    fn crop(&self, img: &DynamicImage) -> DynamicImage {
+    pub fn crop(&self, img: &DynamicImage) -> DynamicImage {
         img.crop_imm(self.x, self.y, self.width, self.height)
     }
 
